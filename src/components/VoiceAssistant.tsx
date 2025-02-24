@@ -19,11 +19,13 @@ export const VoiceAssistant = () => {
   const [isListening, setIsListening] = useState(false);
   const [messages, setMessages] = useState<{role: string, content: string}[]>([]);
   const [hasError, setHasError] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(true);
 
   const handleError = (error: Error, customMessage?: string) => {
     console.error("Voice Assistant Error:", error);
     setHasError(true);
     setIsListening(false);
+    setIsConnecting(false);
     
     // Display error message with retry option
     toast.error(customMessage || ERROR_MESSAGES.UNKNOWN, {
@@ -31,6 +33,7 @@ export const VoiceAssistant = () => {
         label: "Retry",
         onClick: () => {
           setHasError(false);
+          setIsConnecting(true);
           startListening();
         },
       },
@@ -53,10 +56,12 @@ export const VoiceAssistant = () => {
     },
     onConnect: () => {
       setHasError(false);
+      setIsConnecting(false);
       toast.success("Voice assistant connected");
     },
     onDisconnect: () => {
       setIsListening(false);
+      setIsConnecting(false);
       if (!hasError) {
         toast.info("Voice assistant disconnected");
       }
@@ -82,6 +87,9 @@ export const VoiceAssistant = () => {
       try {
         await navigator.mediaDevices.getUserMedia({ audio: true });
         setHasError(false);
+        
+        // After microphone access is granted, try to start the session
+        startListening();
       } catch (error) {
         handleError(error as Error, ERROR_MESSAGES.MICROPHONE_ACCESS);
       }
@@ -103,6 +111,7 @@ export const VoiceAssistant = () => {
       return;
     }
 
+    setIsConnecting(true);
     try {
       await conversation.startSession({
         agentId: "your-agent-id" // Replace with your ElevenLabs agent ID
@@ -139,9 +148,11 @@ export const VoiceAssistant = () => {
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold mb-4">AI Voice Assistant</h1>
         <p className="text-muted-foreground">
-          {hasError 
-            ? "Error connecting to voice service" 
-            : "Click the microphone to start a conversation"}
+          {isConnecting 
+            ? "Connecting to voice service..."
+            : hasError 
+              ? "Error connecting to voice service" 
+              : "Click the microphone to start a conversation"}
         </p>
       </div>
 
@@ -151,7 +162,7 @@ export const VoiceAssistant = () => {
           variant={isListening ? "destructive" : "default"}
           onClick={isListening ? stopListening : startListening}
           className="h-16 w-16 rounded-full"
-          disabled={hasError}
+          disabled={hasError || isConnecting}
         >
           {isListening ? (
             <MicOff className="h-6 w-6" />
@@ -165,7 +176,7 @@ export const VoiceAssistant = () => {
           variant="outline"
           onClick={toggleVolume}
           className="h-16 w-16 rounded-full"
-          disabled={hasError || !conversation.isSpeaking}
+          disabled={hasError || isConnecting || !conversation.isSpeaking}
         >
           {conversation.isSpeaking ? (
             <Volume2 className="h-6 w-6" />
