@@ -114,7 +114,7 @@ export const VoiceAssistant = () => {
     setIsConnecting(true);
     try {
       await conversation.startSession({
-        agentId: "your-agent-id" // Replace with your ElevenLabs agent ID
+        agentId: "sk_f8938b1b4f36c80df8a4b33d93a8c44ec099c808e7e8543d" // Replace with your ElevenLabs agent ID
       });
       setIsListening(true);
     } catch (error) {
