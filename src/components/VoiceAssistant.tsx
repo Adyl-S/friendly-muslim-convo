@@ -5,9 +5,37 @@ import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 
+const ERROR_MESSAGES = {
+  MICROPHONE_ACCESS: "Please enable microphone access to use the voice assistant",
+  CONNECTION_FAILED: "Failed to connect to the voice service. Please try again",
+  SESSION_START: "Could not start voice session. Please check your connection",
+  SESSION_END: "Error ending voice session",
+  VOLUME_CONTROL: "Could not adjust volume",
+  NETWORK: "Network error. Please check your internet connection",
+  UNKNOWN: "An unexpected error occurred. Please try again",
+};
+
 export const VoiceAssistant = () => {
   const [isListening, setIsListening] = useState(false);
   const [messages, setMessages] = useState<{role: string, content: string}[]>([]);
+  const [hasError, setHasError] = useState(false);
+
+  const handleError = (error: Error, customMessage?: string) => {
+    console.error("Voice Assistant Error:", error);
+    setHasError(true);
+    setIsListening(false);
+    
+    // Display error message with retry option
+    toast.error(customMessage || ERROR_MESSAGES.UNKNOWN, {
+      action: {
+        label: "Retry",
+        onClick: () => {
+          setHasError(false);
+          startListening();
+        },
+      },
+    });
+  };
 
   const conversation = useConversation({
     overrides: {
@@ -24,47 +52,64 @@ export const VoiceAssistant = () => {
       },
     },
     onConnect: () => {
+      setHasError(false);
       toast.success("Voice assistant connected");
     },
     onDisconnect: () => {
       setIsListening(false);
-      toast.info("Voice assistant disconnected");
+      if (!hasError) {
+        toast.info("Voice assistant disconnected");
+      }
     },
     onMessage: (message) => {
-      if (message.type === "speech-recognition") {
-        // Handle user speech
-        setMessages(prev => [...prev, { role: "user", content: message.content }]);
-      } else if (message.type === "agent-response") {
-        // Handle AI response
-        setMessages(prev => [...prev, { role: "assistant", content: message.content }]);
+      try {
+        if (message.type === "speech-recognition") {
+          setMessages(prev => [...prev, { role: "user", content: message.content }]);
+        } else if (message.type === "agent-response") {
+          setMessages(prev => [...prev, { role: "assistant", content: message.content }]);
+        }
+      } catch (error) {
+        handleError(error as Error, "Error processing message");
       }
     },
     onError: (error) => {
-      toast.error("Error: " + error.message);
-      setIsListening(false);
+      handleError(error, ERROR_MESSAGES.CONNECTION_FAILED);
     },
   });
 
   useEffect(() => {
-    // Request microphone access when component mounts
     const requestMicrophoneAccess = async () => {
       try {
         await navigator.mediaDevices.getUserMedia({ audio: true });
+        setHasError(false);
       } catch (error) {
-        toast.error("Microphone access denied");
+        handleError(error as Error, ERROR_MESSAGES.MICROPHONE_ACCESS);
       }
     };
     requestMicrophoneAccess();
+
+    // Cleanup function
+    return () => {
+      if (isListening) {
+        conversation.endSession().catch(error => {
+          console.error("Error during cleanup:", error);
+        });
+      }
+    };
   }, []);
 
   const startListening = async () => {
+    if (hasError) {
+      return;
+    }
+
     try {
       await conversation.startSession({
         agentId: "your-agent-id" // Replace with your ElevenLabs agent ID
       });
       setIsListening(true);
     } catch (error) {
-      toast.error("Failed to start listening");
+      handleError(error as Error, ERROR_MESSAGES.SESSION_START);
     }
   };
 
@@ -73,7 +118,7 @@ export const VoiceAssistant = () => {
       await conversation.endSession();
       setIsListening(false);
     } catch (error) {
-      toast.error("Failed to stop listening");
+      handleError(error as Error, ERROR_MESSAGES.SESSION_END);
     }
   };
 
@@ -85,7 +130,7 @@ export const VoiceAssistant = () => {
         await conversation.setVolume({ volume: 1 });
       }
     } catch (error) {
-      toast.error("Failed to toggle volume");
+      handleError(error as Error, ERROR_MESSAGES.VOLUME_CONTROL);
     }
   };
 
@@ -94,7 +139,9 @@ export const VoiceAssistant = () => {
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold mb-4">AI Voice Assistant</h1>
         <p className="text-muted-foreground">
-          Click the microphone to start a conversation
+          {hasError 
+            ? "Error connecting to voice service" 
+            : "Click the microphone to start a conversation"}
         </p>
       </div>
 
@@ -104,6 +151,7 @@ export const VoiceAssistant = () => {
           variant={isListening ? "destructive" : "default"}
           onClick={isListening ? stopListening : startListening}
           className="h-16 w-16 rounded-full"
+          disabled={hasError}
         >
           {isListening ? (
             <MicOff className="h-6 w-6" />
@@ -117,6 +165,7 @@ export const VoiceAssistant = () => {
           variant="outline"
           onClick={toggleVolume}
           className="h-16 w-16 rounded-full"
+          disabled={hasError || !conversation.isSpeaking}
         >
           {conversation.isSpeaking ? (
             <Volume2 className="h-6 w-6" />
